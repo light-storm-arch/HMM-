@@ -60,19 +60,16 @@ def _predict(features_df: pd.DataFrame) -> pd.DataFrame:
 
 # ── sidebar ───────────────────────────────────────────────────────────────────
 
-def render_sidebar(features_df: pd.DataFrame) -> tuple[tuple[date, date], str, bool]:
+def render_sidebar(regime_min_date: date, max_date: date) -> tuple[tuple[date, date], str, bool]:
     st.sidebar.title("HMM Regime Detector")
     st.sidebar.markdown("---")
-
-    min_date = features_df["date"].min().date()
-    max_date = features_df["date"].max().date()
 
     st.sidebar.subheader("Display window")
     date_range = st.sidebar.slider(
         "Date range",
-        min_value=min_date,
+        min_value=regime_min_date,
         max_value=max_date,
-        value=(date(2015, 1, 1), max_date),
+        value=(regime_min_date, max_date),
         format="YYYY-MM-DD",
     )
 
@@ -283,6 +280,174 @@ Off-diagonal entries → typical transition paths (e.g. Calm → Choppy before S
         )
 
 
+# ── tab 3: how it works ───────────────────────────────────────────────────────
+
+def render_tab3() -> None:
+    st.subheader("What this tool does")
+    st.markdown(
+        """
+Every day the stock market behaves differently — sometimes calm and grinding higher,
+sometimes volatile and directionless, sometimes in outright crisis mode. This tool reads
+nine daily market signals, learns to recognise these patterns from history, and tells you
+**which of three regimes the market is currently in**, and how confident it is.
+
+It uses a **Hidden Markov Model (HMM)** — a statistical model that assumes markets move
+through hidden states you cannot observe directly, but can infer from signals you *can*
+observe. The model was trained on data from **2007–2018** only. Everything from 2019 onward
+is genuine out-of-sample — the model had never seen those years when it learned the patterns.
+        """
+    )
+
+    st.divider()
+
+    st.subheader("The three regimes")
+    st.markdown(
+        """
+> **These are volatility-and-stress regimes, not directional calls.**
+> The model identifies *how* the market is behaving — not whether prices will go up or down.
+        """
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(
+            """
+<div style="background:#166534;border-left:4px solid #22c55e;border-radius:8px;padding:16px">
+<div style="font-size:1.1rem;font-weight:700;color:#22c55e">🟢 Calm</div>
+<div style="color:#e2e8f0;margin-top:8px;font-size:0.9rem">
+Low volatility. Markets grinding higher or flat. Credit spreads tight.
+VIX low and in normal contango. Typical "everything is fine" environment.
+</div>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with col2:
+        st.markdown(
+            """
+<div style="background:#78350f;border-left:4px solid #f59e0b;border-radius:8px;padding:16px">
+<div style="font-size:1.1rem;font-weight:700;color:#f59e0b">🟡 Choppy</div>
+<div style="color:#e2e8f0;margin-top:8px;font-size:0.9rem">
+Elevated volatility. Mixed daily returns — up one day, down the next.
+Something is off but not broken. Credit spreads starting to widen.
+The "transition zone" between calm and stress.
+</div>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with col3:
+        st.markdown(
+            """
+<div style="background:#7f1d1d;border-left:4px solid #ef4444;border-radius:8px;padding:16px">
+<div style="font-size:1.1rem;font-weight:700;color:#ef4444">🔴 Stress</div>
+<div style="color:#e2e8f0;margin-top:8px;font-size:0.9rem">
+High volatility. Negative average returns. VIX spiking. Credit spreads
+blowing out. Investors fleeing to Treasuries. Crisis behaviour.
+</div>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.divider()
+
+    st.subheader("The 9 input signals")
+    st.markdown(
+        "These are calculated fresh every trading day and fed into the model."
+    )
+
+    features_data = {
+        "Signal": [
+            "SPY daily return",
+            "Realized volatility (20-day)",
+            "VIX level",
+            "VIX term structure",
+            "HYG / LQD ratio change",
+            "TLT daily return",
+            "Baa corporate spread",
+            "10Y – 2Y yield curve",
+            "NFCI",
+        ],
+        "What it measures": [
+            "Daily log return of SPY — the S&P 500 ETF",
+            "How much SPY has been moving over the past month, annualised. The single most important regime signal.",
+            "The market's implied fear gauge — derived from S&P 500 options prices",
+            "VIX minus 3-month VIX. When near-term fear exceeds 3-month fear (backwardation), it signals acute stress.",
+            "5-day change in the ratio of high-yield bonds (HYG) to investment-grade bonds (LQD). Risk-off when HY underperforms.",
+            "Daily return of the 20+ year Treasury ETF. Rises in a flight-to-safety, falls when risk appetite is strong.",
+            "Moody's Baa corporate bond yield spread over 10-year Treasuries. Widens when credit markets are stressed.",
+            "10-year Treasury yield minus 2-year yield. Inversion signals recession risk; steepening signals recovery.",
+            "Chicago Fed National Financial Conditions Index — a broad weekly gauge of stress across money markets, debt, and equity.",
+        ],
+        "Source": [
+            "Yahoo Finance", "Calculated from SPY", "Yahoo Finance (^VIX)",
+            "Yahoo Finance (^VIX – ^VIX3M)", "Yahoo Finance (HYG, LQD)",
+            "Yahoo Finance (TLT)", "FRED (BAA10Y)",
+            "FRED (T10Y2Y)", "FRED (NFCI)",
+        ],
+    }
+
+    st.dataframe(
+        features_data,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Signal": st.column_config.TextColumn(width="medium"),
+            "What it measures": st.column_config.TextColumn(width="large"),
+            "Source": st.column_config.TextColumn(width="small"),
+        },
+    )
+
+    st.divider()
+
+    st.subheader("How the model works")
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        st.markdown("**Training (done once, offline)**")
+        st.markdown(
+            """
+1. Collect all 9 signals for every trading day **2007–2018** (~3,000 days)
+2. Standardise each signal (zero mean, unit variance) so they're on equal footing
+3. Run the HMM fitting algorithm — it finds 3 clusters of days that look statistically
+   similar to each other, and learns the probability of moving between clusters day-to-day
+4. Label the clusters by volatility rank: lowest vol → **Calm**, middle → **Choppy**,
+   highest → **Stress**. This labelling is automatic and consistent across refits.
+5. Save the trained model to disk so the app never retrains on load
+            """
+        )
+
+    with col_b:
+        st.markdown("**Live classification (runs daily)**")
+        st.markdown(
+            """
+1. Fetch today's signals from Yahoo Finance and FRED
+2. Apply the same standardisation used during training
+3. Run **Viterbi decoding** — an algorithm that finds the single most-likely sequence
+   of hidden states across the entire price history, all at once
+4. Run **forward-backward algorithm** — produces probability estimates for each state
+   on each day (the three coloured bars in the metric cards)
+5. Display current regime + full history on the dashboard
+            """
+        )
+
+    st.divider()
+
+    st.subheader("Important caveats")
+    st.markdown(
+        """
+| Caveat | Detail |
+|---|---|
+| **Not a directional signal** | A Calm regime can occur while markets drift sideways for months. A Stress regime can occur during sharp recoveries. The model identifies *how* the market is behaving, not *where* it is going. |
+| **Detection lag** | Viterbi decoding is applied to the full sequence at once — it uses some hindsight. Expect a **5–15 trading-day lag** before a real-time regime shift is detected with confidence. |
+| **Out-of-sample boundary** | The model was trained on 2007–2018. Stats for 2019–present are genuine out-of-sample. If you click "Refit on full history", that boundary disappears and OOS stats become meaningless. |
+| **Descriptive, not causal** | Regime labels describe a statistical cluster of market behaviour. They do not explain *why* the market shifted. |
+| **Single train/test split** | Version 1 uses one fixed train/test split. A rolling walk-forward validation would give more reliable performance estimates. |
+        """
+    )
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -304,10 +469,7 @@ def main() -> None:
         st.code("python scripts/fit_model.py", language="bash")
         st.stop()
 
-    # ── sidebar ───────────────────────────────────────────────────────────────
-    date_range, period_view, _ = render_sidebar(features_df)
-
-    # ── regime prediction ─────────────────────────────────────────────────────
+    # ── regime prediction (before sidebar so we know the true min date) ─────────
     try:
         regime_df = _predict(features_df)
     except Exception:
@@ -319,14 +481,23 @@ def main() -> None:
         st.warning("No regime data to display — check that features have no unexpected NaNs.")
         st.stop()
 
+    regime_min_date = regime_df["date"].min().date()
+    regime_max_date = regime_df["date"].max().date()
+
+    # ── sidebar ───────────────────────────────────────────────────────────────
+    date_range, period_view, _ = render_sidebar(regime_min_date, regime_max_date)
+
     # ── main content ──────────────────────────────────────────────────────────
-    tab1, tab2 = st.tabs(["📊 Regime History", "🔬 Backtest Stats"])
+    tab1, tab2, tab3 = st.tabs(["📊 Regime History", "🔬 Backtest Stats", "📖 How It Works"])
 
     with tab1:
         render_tab1(regime_df, date_range, period_view)
 
     with tab2:
         render_tab2(regime_df)
+
+    with tab3:
+        render_tab3()
 
 
 if __name__ == "__main__":
