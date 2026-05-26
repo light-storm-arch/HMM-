@@ -50,6 +50,35 @@ def _regime_spans(df: pd.DataFrame) -> list[dict]:
     return spans
 
 
+def _add_oos_line(fig: go.Figure, split_date: str, label: bool = True) -> None:
+    """Draw a full-height dashed line at the OOS boundary.
+
+    Uses add_shape/add_annotation rather than add_vline: the latter computes a
+    midpoint via sum() over the x endpoints, which raises on string dates in
+    recent plotly versions.
+    """
+    fig.add_shape(
+        type="line",
+        x0=split_date,
+        x1=split_date,
+        y0=0,
+        y1=1,
+        yref="paper",
+        line=dict(color="#94a3b8", dash="dash", width=1),
+    )
+    if label:
+        fig.add_annotation(
+            x=split_date,
+            y=1,
+            yref="paper",
+            text="OOS start",
+            showarrow=False,
+            font=dict(color="#94a3b8", size=11),
+            xanchor="left",
+            yanchor="bottom",
+        )
+
+
 def plot_spy_with_regimes(
     df: pd.DataFrame,
     split_date: str = "2019-01-01",
@@ -79,14 +108,7 @@ def plot_spy_with_regimes(
         )
     )
 
-    fig.add_vline(
-        x=split_date,
-        line_dash="dash",
-        line_color="#94a3b8",
-        annotation_text="OOS start",
-        annotation_font_color="#94a3b8",
-        annotation_position="top right",
-    )
+    _add_oos_line(fig, split_date, label=True)
 
     fig.update_layout(
         **_BASE_LAYOUT,
@@ -122,11 +144,7 @@ def plot_regime_probabilities(
             )
         )
 
-    fig.add_vline(
-        x=split_date,
-        line_dash="dash",
-        line_color="#94a3b8",
-    )
+    _add_oos_line(fig, split_date, label=False)
 
     fig.update_layout(
         **_BASE_LAYOUT,
