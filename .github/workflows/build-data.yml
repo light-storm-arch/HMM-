@@ -1,0 +1,48 @@
+name: Build data cache and fit model
+
+# Generates data/historical_cache.csv and models/hmm_fitted.pkl, then commits
+# them back to the repo. Run this once to bootstrap the project, and on a
+# schedule (or manually) afterwards to keep the cached history fresh.
+
+on:
+  workflow_dispatch:        # adds a "Run workflow" button in the Actions tab
+  schedule:
+    - cron: "0 6 * * 1"     # optional: every Monday 06:00 UTC. Delete if unwanted.
+
+permissions:
+  contents: write           # needed to commit the generated files back
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build historical cache
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: python scripts/build_cache.py
+
+      - name: Fit model
+        run: python scripts/fit_model.py
+
+      - name: Commit generated artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/historical_cache.csv models/hmm_fitted.pkl
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Update data cache and refit model [skip ci]"
+            git push
+          fi
