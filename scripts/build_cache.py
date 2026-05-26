@@ -64,7 +64,7 @@ def _download_yfinance(start: str, end: str) -> pd.DataFrame:
     if not series_list:
         return pd.DataFrame()
 
-    df = pd.concat(series_list, axis=1)
+    df = pd.concat(series_list, axis=1, sort=True)
     df.index.name = "date"
     return df.reset_index()
 
@@ -90,7 +90,7 @@ def _download_fred(start: str, end: str, api_key: str) -> pd.DataFrame:
     if not series_list:
         return pd.DataFrame()
 
-    df = pd.concat(series_list, axis=1)
+    df = pd.concat(series_list, axis=1, sort=True)
     df.index.name = "date"
     return df.reset_index()
 

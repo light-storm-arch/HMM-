@@ -174,6 +174,6 @@ schedule and commits the outputs.
 | Series | Source | Notes |
 |--------|--------|-------|
 | SPY, VIX, VIX3M, HYG, LQD, TLT | yfinance | Adjusted closes |
-| HY OAS (`BAMLH0A0HYM2`) | FRED | ICE BofA HY spread |
+| Baa corporate spread (`BAA10Y`) | FRED | Moody's Baa spread over 10Y Treasury (free, from 1986). Used as credit stress proxy — ICE BofA HY OAS is restricted on free FRED keys. |
 | 10Y-2Y spread (`T10Y2Y`) | FRED | Yield curve |
 | NFCI (`NFCI`) | FRED | Chicago Fed financial conditions |

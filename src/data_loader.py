@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import streamlit as st
 import yfinance as yf
 
 CACHE_PATH = Path(__file__).parent.parent / "data" / "historical_cache.csv"
@@ -24,8 +23,10 @@ YFINANCE_TICKERS: dict[str, str] = {
 }
 
 # FRED series ID → output column name
+# BAA10Y = Moody's Baa corporate spread over 10-year Treasury (free, history from 1986).
+# BAMLH0A0HYM2 (ICE BofA HY OAS) is restricted to recent history on free FRED API keys.
 FRED_SERIES: dict[str, str] = {
-    "BAMLH0A0HYM2": "hy_oas",
+    "BAA10Y": "hy_oas",
     "T10Y2Y": "t10y2y",
     "NFCI": "nfci",
 }
@@ -86,7 +87,7 @@ def fetch_yfinance(start: str, end: str) -> pd.DataFrame:
     if not series_list:
         return pd.DataFrame(columns=["date"])
 
-    df = pd.concat(series_list, axis=1)
+    df = pd.concat(series_list, axis=1, sort=True)
     df.index.name = "date"
     df = df.reset_index()
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
@@ -116,7 +117,7 @@ def fetch_fred(start: str, end: str, api_key: str) -> pd.DataFrame:
     if not series_list:
         return pd.DataFrame(columns=["date"])
 
-    df = pd.concat(series_list, axis=1)
+    df = pd.concat(series_list, axis=1, sort=True)
     df.index.name = "date"
     df = df.reset_index()
     return df
@@ -190,6 +191,9 @@ def load_data(fred_api_key: str | None = None) -> pd.DataFrame:
     return _post_process(combined)
 
 
-@st.cache_data(ttl=3600)
 def load_data_cached(fred_api_key: str | None = None) -> pd.DataFrame:
-    return load_data(fred_api_key)
+    """Streamlit-cached version of load_data. Falls back to uncached outside Streamlit."""
+    import streamlit as st
+    if not hasattr(load_data_cached, "_fn"):
+        load_data_cached._fn = st.cache_data(ttl=3600)(load_data)
+    return load_data_cached._fn(fred_api_key)
