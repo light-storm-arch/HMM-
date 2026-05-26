@@ -10,6 +10,13 @@ REGIME_COLORS: dict[str, str] = {
     "Stress": "#ef4444",
 }
 
+
+def _rgba(hex_color: str, alpha: float) -> str:
+    """Convert '#RRGGBB' + alpha to 'rgba(r,g,b,alpha)' accepted by all plotly versions."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
 _DARK_BG = "#0e1117"
 _PLOT_BG = "#0e1117"
 _PAPER_BG = "#0e1117"
@@ -138,7 +145,7 @@ def plot_regime_probabilities(
                 y=df[col],
                 stackgroup="one",
                 name=label,
-                fillcolor=REGIME_COLORS[label] + "99",
+                fillcolor=_rgba(REGIME_COLORS[label], 0.6),
                 line=dict(color=REGIME_COLORS[label], width=0.5),
                 mode="lines",
             )
@@ -176,7 +183,7 @@ def plot_forward_returns(fwd_df: pd.DataFrame) -> go.Figure:
                     name=label,
                     box_visible=True,
                     meanline_visible=True,
-                    fillcolor=REGIME_COLORS[label] + "88",
+                    fillcolor=_rgba(REGIME_COLORS[label], 0.53),
                     line_color=REGIME_COLORS[label],
                     showlegend=(col_idx == 1),
                 ),
