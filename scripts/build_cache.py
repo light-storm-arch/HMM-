@@ -1,7 +1,7 @@
 """One-time script to build data/historical_cache.csv.
 
 Usage:
-    export FRED_API_KEY= 509a9d68566413b4b1b1b0b5dc2c4996
+    export FRED_API_KEY=your_key_here
     python scripts/build_cache.py
 
 Or pass the key directly:
