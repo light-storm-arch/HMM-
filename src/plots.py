@@ -158,9 +158,9 @@ def plot_regime_probabilities(
         title="Regime Posterior Probabilities",
         xaxis_title=None,
         yaxis_title="Probability",
-        yaxis=dict(range=[0, 1], gridcolor=_GRID_COLOR, zerolinecolor=_GRID_COLOR),
         height=300,
     )
+    fig.update_yaxes(range=[0, 1])
     return fig
 
 
