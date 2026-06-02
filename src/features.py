@@ -26,6 +26,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     Rows at the front will have NaN from rolling windows — callers should
     dropna(subset=FEATURE_COLS) before passing to the HMM.
     """
+    attrs = dict(df.attrs)
     out = df.copy()
     out = out.sort_values("date").reset_index(drop=True)
 
@@ -50,4 +51,5 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         if col not in out.columns:
             out[col] = np.nan
 
+    out.attrs = attrs
     return out

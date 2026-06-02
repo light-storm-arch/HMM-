@@ -3,8 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-SPLIT_DATE = "2019-01-01"
-STATE_LABELS = ["Calm", "Choppy", "Stress"]
+from src.constants import SPLIT_DATE, STATE_LABELS
 
 
 def _regime_stats(df: pd.DataFrame) -> pd.DataFrame:

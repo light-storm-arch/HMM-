@@ -4,11 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-REGIME_COLORS: dict[str, str] = {
-    "Calm": "#22c55e",
-    "Choppy": "#f59e0b",
-    "Stress": "#ef4444",
-}
+from src.constants import REGIME_COLORS
 
 
 def _rgba(hex_color: str, alpha: float) -> str:
