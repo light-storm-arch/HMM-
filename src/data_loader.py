@@ -123,11 +123,27 @@ def fetch_fred(start: str, end: str, api_key: str) -> pd.DataFrame:
     return df
 
 
+FRED_COLS = ["hy_oas", "t10y2y", "nfci"]
+
+
 def _post_process(df: pd.DataFrame) -> pd.DataFrame:
-    """Forward-fill prices for market-closed days and carry FRED values."""
+    """Forward-fill prices for market-closed days and carry FRED values.
+
+    Records each FRED column's last non-NaN date (before ffill) into
+    df.attrs["fred_last_update"], so the UI can flag stale macro data.
+    """
     df = df.copy()
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
     df = df.sort_values("date").drop_duplicates(subset=["date"]).reset_index(drop=True)
+
+    fred_last_update: dict[str, pd.Timestamp | None] = {}
+    for col in FRED_COLS:
+        if col in df.columns:
+            valid = df.loc[df[col].notna(), "date"]
+            fred_last_update[col] = valid.max() if not valid.empty else None
+        else:
+            fred_last_update[col] = None
+
     df = df.set_index("date")
 
     market_cols = ["spy_close", "vix_close", "vix3m_close", "hyg_close", "lqd_close", "tlt_close"]
@@ -135,12 +151,12 @@ def _post_process(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].ffill()
 
-    fred_cols = ["hy_oas", "t10y2y", "nfci"]
-    for col in fred_cols:
+    for col in FRED_COLS:
         if col in df.columns:
             df[col] = df[col].ffill()
 
     df = df.reset_index()
+    df.attrs["fred_last_update"] = fred_last_update
     return df
 
 

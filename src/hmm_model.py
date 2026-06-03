@@ -8,13 +8,10 @@ import pandas as pd
 from hmmlearn.hmm import GaussianHMM
 from sklearn.preprocessing import StandardScaler
 
+from src.constants import STATE_LABELS, TRAIN_END, TRAIN_START
 from src.features import FEATURE_COLS
 
-TRAIN_START = "2007-01-01"
-TRAIN_END = "2018-12-31"
 MODEL_PATH = Path(__file__).parent.parent / "models" / "hmm_fitted.pkl"
-
-STATE_LABELS = ["Calm", "Choppy", "Stress"]
 
 
 def relabel_states(

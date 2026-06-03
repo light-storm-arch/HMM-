@@ -17,9 +17,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from src.constants import TRAIN_END, TRAIN_START
 from src.data_loader import load_data
 from src.features import FEATURE_COLS, build_features
-from src.hmm_model import MODEL_PATH, TRAIN_END, TRAIN_START, fit_hmm, save_model
+from src.hmm_model import MODEL_PATH, fit_hmm, save_model
 
 
 def main() -> None:

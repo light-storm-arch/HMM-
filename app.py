@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from src.constants import REGIME_CARD_COLORS, SPLIT_DATE, TRAIN_START
+
 st.set_page_config(
     page_title="HMM Regime Detector",
     page_icon="📈",
@@ -16,16 +18,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── constants ─────────────────────────────────────────────────────────────────
-SPLIT_DATE = "2019-01-01"
-TRAIN_START = "2007-01-01"
 MODEL_PATH = Path("models/hmm_fitted.pkl")
 CACHE_PATH = Path("data/historical_cache.csv")
 
-REGIME_CARD_COLORS = {
-    "Calm": ("#166534", "#22c55e"),   # bg, accent
-    "Choppy": ("#78350f", "#f59e0b"),
-    "Stress": ("#7f1d1d", "#ef4444"),
+FRED_STALE_BUSINESS_DAYS = 5
+FRED_DISPLAY_NAMES = {
+    "hy_oas": "Baa corporate spread (BAA10Y)",
+    "t10y2y": "10Y–2Y yield curve (T10Y2Y)",
+    "nfci": "Chicago Fed NFCI",
 }
 
 
@@ -45,11 +45,13 @@ def _get_model():
 
 
 @st.cache_data(ttl=3600)
-def _load_and_build(fred_api_key: str | None) -> pd.DataFrame:
+def _load_and_build(fred_api_key: str | None) -> tuple[pd.DataFrame, dict]:
     from src.data_loader import load_data
     from src.features import build_features
     raw = load_data(fred_api_key)
-    return build_features(raw)
+    features = build_features(raw)
+    fred_last_update = features.attrs.get("fred_last_update", {})
+    return features, fred_last_update
 
 
 def _predict(features_df: pd.DataFrame) -> pd.DataFrame:
@@ -60,7 +62,12 @@ def _predict(features_df: pd.DataFrame) -> pd.DataFrame:
 
 # ── sidebar ───────────────────────────────────────────────────────────────────
 
-def render_sidebar(regime_min_date: date, max_date: date) -> tuple[tuple[date, date], str, bool]:
+def render_sidebar(
+    regime_min_date: date,
+    max_date: date,
+    features_df: pd.DataFrame,
+    fred_last_update: dict,
+) -> tuple[tuple[date, date], str, bool]:
     st.sidebar.title("HMM Regime Detector")
     st.sidebar.markdown("---")
 
@@ -81,16 +88,23 @@ def render_sidebar(regime_min_date: date, max_date: date) -> tuple[tuple[date, d
     )
 
     st.sidebar.subheader("Model")
+    ack = st.sidebar.checkbox(
+        "I understand this invalidates OOS stats",
+        key="refit_ack",
+        help="Required before the refit button is enabled.",
+    )
+    if ack:
+        st.sidebar.warning(
+            "Refitting on full history removes the genuine out-of-sample window. "
+            "OOS stats will be meaningless until the page is reloaded."
+        )
     refit_clicked = st.sidebar.button(
         "Refit model on full history",
         help="Refits on 2007 → today. Eliminates the true out-of-sample period.",
+        disabled=not ack,
     )
 
     if refit_clicked:
-        st.sidebar.warning(
-            "Refitting on full history removes the genuine out-of-sample window. "
-            "OOS stats will be meaningless after this — reload the page to restore."
-        )
         with st.sidebar.status("Refitting HMM…"):
             from src.hmm_model import fit_hmm
             model, scaler, state_map = fit_hmm(
@@ -105,9 +119,44 @@ def render_sidebar(regime_min_date: date, max_date: date) -> tuple[tuple[date, d
         st.sidebar.info("Using full-history refitted model.")
 
     st.sidebar.markdown("---")
-    st.sidebar.caption("Data updates every hour. FRED series update weekly/monthly.")
+    _render_fred_freshness(fred_last_update)
 
     return date_range, period_view, refit_clicked
+
+
+def _render_fred_freshness(fred_last_update: dict) -> None:
+    """Show last-real-update dates for each FRED series with a stale-data warning."""
+    st.sidebar.subheader("FRED data freshness")
+
+    if not fred_last_update or all(v is None for v in fred_last_update.values()):
+        st.sidebar.warning(
+            "FRED data unavailable (no API key configured). The model is running "
+            "without macro inputs — set FRED_API_KEY in secrets to enable."
+        )
+        return
+
+    today = pd.Timestamp(date.today())
+    any_stale = False
+    lines: list[str] = []
+    for col, label in FRED_DISPLAY_NAMES.items():
+        ts = fred_last_update.get(col)
+        if ts is None or pd.isna(ts):
+            lines.append(f"- **{label}**: unavailable")
+            any_stale = True
+            continue
+        business_days = np.busday_count(ts.date(), today.date())
+        suffix = f"{business_days} business day{'s' if business_days != 1 else ''} ago"
+        lines.append(f"- **{label}**: {ts.date().isoformat()}  ({suffix})")
+        if business_days > FRED_STALE_BUSINESS_DAYS:
+            any_stale = True
+
+    st.sidebar.markdown("\n".join(lines))
+    if any_stale:
+        st.sidebar.warning(
+            f"At least one FRED series is more than {FRED_STALE_BUSINESS_DAYS} business "
+            "days stale. Forward-filled values are being used in its place."
+        )
+    st.sidebar.caption("Market data updates hourly. FRED series often lag by days.")
 
 
 # ── tab 1: current regime + history ───────────────────────────────────────────
@@ -137,6 +186,9 @@ def render_tab1(regime_df: pd.DataFrame, date_range: tuple[date, date], period_v
     p_stress = latest.get("prob_stress", np.nan)
     latest_date = pd.to_datetime(latest["date"]).strftime("%Y-%m-%d")
 
+    probs = [p for p in (p_calm, p_choppy, p_stress) if not np.isnan(p)]
+    confidence_str = f"{max(probs):.0%}" if probs else "—"
+
     col_label, col_calm, col_choppy, col_stress = st.columns(4)
 
     bg, accent = REGIME_CARD_COLORS.get(current_label, ("#1e293b", "#94a3b8"))
@@ -146,6 +198,9 @@ def render_tab1(regime_df: pd.DataFrame, date_range: tuple[date, date], period_v
                     border-radius:8px;padding:16px;text-align:center">
             <div style="font-size:0.75rem;color:#94a3b8">REGIME ({latest_date})</div>
             <div style="font-size:1.8rem;font-weight:700;color:{accent}">{current_label}</div>
+            <div style="font-size:0.75rem;color:#94a3b8;margin-top:4px">
+                Confidence: <span style="color:#e2e8f0;font-weight:600">{confidence_str}</span>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -192,6 +247,23 @@ def render_tab1(regime_df: pd.DataFrame, date_range: tuple[date, date], period_v
     recent["prob_stress"] = (recent["prob_stress"] * 100).round(1)
     recent.columns = ["Date", "SPY Close", "Daily Return (%)", "Regime", "Stress Prob (%)"]
     st.dataframe(recent.iloc[::-1], use_container_width=True, hide_index=True)
+
+    # ── CSV export ────────────────────────────────────────────────────────────
+    export_cols = [
+        c
+        for c in ["date", "spy_close", "log_return", "state_label",
+                  "prob_calm", "prob_choppy", "prob_stress"]
+        if c in regime_df.columns
+    ]
+    export_df = regime_df[export_cols].copy()
+    export_df["date"] = pd.to_datetime(export_df["date"]).dt.strftime("%Y-%m-%d")
+    max_date_str = pd.to_datetime(regime_df["date"].max()).strftime("%Y%m%d")
+    st.download_button(
+        "Download regime history (CSV)",
+        data=export_df.to_csv(index=False).encode("utf-8"),
+        file_name=f"hmm_regimes_{max_date_str}.csv",
+        mime="text/csv",
+    )
 
 
 # ── tab 2: backtest stats ─────────────────────────────────────────────────────
@@ -455,7 +527,7 @@ def main() -> None:
 
     # ── data loading ──────────────────────────────────────────────────────────
     try:
-        features_df = _load_and_build(fred_api_key)
+        features_df, fred_last_update = _load_and_build(fred_api_key)
     except FileNotFoundError as exc:
         st.error(str(exc))
         st.code("python scripts/build_cache.py", language="bash")
@@ -485,7 +557,9 @@ def main() -> None:
     regime_max_date = regime_df["date"].max().date()
 
     # ── sidebar ───────────────────────────────────────────────────────────────
-    date_range, period_view, _ = render_sidebar(regime_min_date, regime_max_date)
+    date_range, period_view, _ = render_sidebar(
+        regime_min_date, regime_max_date, features_df, fred_last_update
+    )
 
     # ── main content ──────────────────────────────────────────────────────────
     tab1, tab2, tab3 = st.tabs(["📊 Regime History", "🔬 Backtest Stats", "📖 How It Works"])
